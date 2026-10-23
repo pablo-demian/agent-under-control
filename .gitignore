@@ -1,0 +1,31 @@
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Execution traces and experiment outputs
+results/*
+!results/.gitkeep
+
+# Local tooling
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
