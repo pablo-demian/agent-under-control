@@ -1,0 +1,12 @@
+{
+  "principal": "sre-agent",
+  "resource": "payments-api",
+  "environment": "staging",
+  "capability": "logging.configure",
+  "arguments": {
+    "operation": "disable_audit_logging"
+  },
+  "predicted_effects": {
+    "audit_logging_enabled": false
+  }
+}
