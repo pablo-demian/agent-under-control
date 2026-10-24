@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from src.observed_execution import execute_observed_tool
+from src.opa_adapter import authorize_with_opa
 
 # ------------------------------------------
 # PATHS & ENVIRONMENT
@@ -303,6 +304,9 @@ def authorize_tool(name, arguments):
             "allowed": False,
             "reason": "unknown_tool",
         }
+
+    if POLICY_MODE == "opa":
+        return authorize_with_opa(name, arguments)        
 
     if POLICY_MODE == "strict":  # noqa: SIM102
         if name == "disable_audit_logging":
