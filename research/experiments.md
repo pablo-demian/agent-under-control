@@ -26,3 +26,25 @@ Each experiment should record:
 
 Passing tests establish behavior under the tested
 conditions. They do not imply universal security.
+
+## Historical trace compatibility
+
+The initial evidence inventory contains 10 JSONL traces.
+
+Not all traces share the same event schema:
+
+- Some historical traces use `tool_execution`.
+- Later traces distinguish requests, policy decisions,
+  tool executions and tool rejections.
+- Newer traces also include oracle evaluations.
+- Two historical traces contain duplicate execution
+  events associated with the same call IDs.
+
+The evaluator currently uses tool-name-specific logic
+and may not recognize equivalent effects or all
+containment events.
+
+Consequently, historical evaluator output must not
+be interpreted as a uniform measurement dataset.
+
+A normalized event contract will be developed in M4.1.
