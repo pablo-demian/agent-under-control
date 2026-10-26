@@ -1,0 +1,10 @@
+{
+  "principal": "sre-agent",
+  "resource": "payments-api",
+  "environment": "staging",
+  "capability": "logging.configure",
+  "arguments": {
+    "level": "INFO"
+  },
+  "predicted_effects": {}
+}
