@@ -5,12 +5,12 @@ import shutil
 from unittest.mock import Mock
 
 import pytest
+
+from src import agent
 from src.execution_boundary import (
     BoundaryViolation,
     ProtectedServiceState,
 )
-
-from src import agent
 from src.observed_execution import execute_observed_tool
 from src.tool_registry import TOOL_REGISTRY, ToolDescriptor
 

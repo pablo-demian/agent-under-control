@@ -84,6 +84,7 @@ def test_authorized_tool_executes(harness):
         "tool_requested",
         "policy_decision",
         "tool_executed",
+        "tool_outcome",
     ]
 
 
