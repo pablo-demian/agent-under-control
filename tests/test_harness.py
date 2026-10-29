@@ -193,3 +193,182 @@ def test_authorization_precedes_execution(harness):
         "authorize",
         "execute",
     ]
+
+
+def test_authorization_callback_receives_decision(harness):
+    on_decision = Mock()
+
+    result = execute_tool(
+        name="restart_service",
+        raw_arguments=json.dumps({
+            "service": "payments-api",
+            "environment": "staging",
+        }),
+        call_id="call_binding_001",
+        round_number=1,
+        dispatch=harness["dispatch"],
+        authorize=harness["authorize"],
+        trace=harness["trace"],
+        on_authorization_decision=on_decision,
+    )
+
+    assert result == {"status": "ok"}
+
+    on_decision.assert_called_once_with({
+        "allowed": True,
+        "reason": "baseline_allow",
+    })
+
+
+def test_denied_decision_is_also_delivered(harness):
+    on_decision = Mock()
+
+    harness["authorize"].return_value = {
+        "allowed": False,
+        "reason": "policy_denied",
+    }
+
+    result = execute_tool(
+        name="restart_service",
+        raw_arguments='{"service": "payments-api"}',
+        call_id="call_binding_002",
+        round_number=1,
+        dispatch=harness["dispatch"],
+        authorize=harness["authorize"],
+        trace=harness["trace"],
+        on_authorization_decision=on_decision,
+    )
+
+    assert result["error"] == "tool_not_authorized"
+
+    on_decision.assert_called_once_with({
+        "allowed": False,
+        "reason": "policy_denied",
+    })
+
+    harness["tool"].assert_not_called()
+
+
+def test_invalid_json_never_delivers_authorization(harness):
+    on_decision = Mock()
+
+    execute_tool(
+        name="restart_service",
+        raw_arguments="{invalid",
+        call_id="call_binding_003",
+        round_number=1,
+        dispatch=harness["dispatch"],
+        authorize=harness["authorize"],
+        trace=harness["trace"],
+        on_authorization_decision=on_decision,
+    )
+
+    on_decision.assert_not_called()
+    harness["authorize"].assert_not_called()
+
+
+def test_callback_mutation_cannot_change_authorization(harness):
+    def mutate_decision(decision):
+        decision["allowed"] = False
+        decision["reason"] = "modified_by_callback"
+
+    result = execute_tool(
+        name="restart_service",
+        raw_arguments='{"service": "payments-api"}',
+        call_id="call_binding_004",
+        round_number=1,
+        dispatch=harness["dispatch"],
+        authorize=harness["authorize"],
+        trace=harness["trace"],
+        on_authorization_decision=mutate_decision,
+    )
+
+    assert result == {"status": "ok"}
+    harness["tool"].assert_called_once()
+
+    policy_events = [
+        call
+        for call in harness["trace"].call_args_list
+        if call.args[0] == "policy_decision"
+    ]
+
+    assert policy_events[0].args[1]["decision"]["allowed"] is True
+
+
+def test_mismatched_authorized_arguments_never_dispatch(harness):
+    harness["authorize"].return_value = {
+        "allowed": True,
+        "reason": "opa_allow",
+        "evaluated_context": {
+            "resource": "payments-api",
+            "arguments": {
+                "service": "payments-api",
+                "environment": "staging",
+                "level": "INFO",
+            },
+            "predicted_effects": {
+                "audit_logging_enabled": True,
+            },
+        },
+    }
+
+    result = harness["run"](
+        arguments={
+            "service": "payments-api",
+            "environment": "staging",
+            "level": "NONE",
+        }
+    )
+
+    assert result["error"] == "authorization_context_mismatch"
+    harness["tool"].assert_not_called()
+
+    events = event_names(harness["trace"])
+    assert "tool_rejected" in events
+    assert "tool_executed" not in events
+    assert "tool_outcome" not in events
+
+
+def test_mismatched_authorized_resource_never_dispatch(harness):
+    harness["authorize"].return_value = {
+        "allowed": True,
+        "reason": "opa_allow",
+        "evaluated_context": {
+            "resource": "billing-api",
+            "arguments": {
+                "service": "payments-api",
+            },
+            "predicted_effects": {},
+        },
+    }
+
+    result = harness["run"](
+        arguments={"service": "payments-api"}
+    )
+
+    assert result["error"] == "authorization_context_mismatch"
+    harness["tool"].assert_not_called()
+
+
+def test_authorizer_argument_mutation_cannot_change_dispatch(harness):
+    def authorize(name, arguments):
+        arguments["service"] = "billing-api"
+
+        return {
+            "allowed": True,
+            "reason": "opa_allow",
+            "evaluated_context": {
+                "resource": "billing-api",
+                "arguments": dict(arguments),
+                "predicted_effects": {},
+            },
+        }
+
+    harness["authorize"].side_effect = authorize
+
+    result = harness["run"](
+        arguments={"service": "payments-api"}
+    )
+
+    assert result["error"] == "authorization_context_mismatch"
+    harness["tool"].assert_not_called()

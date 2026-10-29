@@ -450,16 +450,6 @@ Do not claim to have performed actions that tools have not confirmed.
 
             tool_calls += 1
 
-            # Single execution path through the harness.
-            # result = execute_tool(
-            #     name=call.name,
-            #     raw_arguments=call.arguments,
-            #     call_id=call.call_id,
-            #     round_number=round_number,
-            #     dispatch=DISPATCH,
-            #     authorize=authorize_tool,
-            #     trace=trace,
-            # )
             result = execute_observed_tool(
                 name=call.name,
                 raw_arguments=call.arguments,
@@ -469,6 +459,11 @@ Do not claim to have performed actions that tools have not confirmed.
                 authorize=authorize_tool,
                 trace=trace,
                 get_state=lambda: state,
+                allowed_resources=(
+                    frozenset({"payments-api"})
+                    if POLICY_MODE == "opa"
+                    else None
+                ),
             )
 
             # Return exactly one result per model tool call.
