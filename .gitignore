@@ -29,3 +29,10 @@ results/*
 # OS
 .DS_Store
 Thumbs.db
+
+# Local research utilities
+/inspect_trace.py
+/research_trace_inventory.py
+
+# Private editorial drafts
+/research/publications/
