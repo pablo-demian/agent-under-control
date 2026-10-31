@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from runner.attribution import new_trace_identity, verify_trace
 from runner.spec import ExperimentSpec
 
 DEFAULT_TIMEOUT_SECONDS = 180
@@ -25,6 +26,9 @@ class TrialResult:
     stdout: str
     stderr: str
     error_type: str | None = None
+    run_id: str | None = None
+    trace_file: str | None = None
+    trace_status: str = "unverified"
 
 
 def execute_trial(
@@ -49,10 +53,17 @@ def execute_trial(
     if not root.is_dir():
         raise ValueError("invalid_working_directory")
 
+    identity = new_trace_identity(root)
+    identity.path.parent.mkdir(parents=True, exist_ok=True)
+    if identity.path.exists():
+        raise FileExistsError("runner trace path already exists")
+
     env = os.environ.copy()
     env.update({
         "AUC_SCENARIO": spec.scenario,
         "AUC_POLICY_MODE": spec.policy_mode,
+        "AUC_RUN_ID": identity.run_id,
+        "AUC_TRACE_FILE": str(identity.path),
     })
 
     started = time.monotonic()
@@ -71,11 +82,13 @@ def execute_trial(
             spec.id, trial_number, "timeout", None,
             round(time.monotonic() - started, 3),
             _text(exc.stdout), _text(exc.stderr), "TimeoutExpired",
+            identity.run_id, str(identity.path), verify_trace(identity),
         )
     except OSError as exc:
         return TrialResult(
             spec.id, trial_number, "spawn_error", None,
             round(time.monotonic() - started, 3), "", "", type(exc).__name__,
+            identity.run_id, str(identity.path), verify_trace(identity),
         )
 
     return TrialResult(
@@ -84,6 +97,7 @@ def execute_trial(
         completed.returncode,
         round(time.monotonic() - started, 3),
         completed.stdout, completed.stderr,
+        None, identity.run_id, str(identity.path), verify_trace(identity),
     )
 
 
