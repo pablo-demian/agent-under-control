@@ -6,6 +6,7 @@ from functools import partial
 from pathlib import Path
 
 from runner.batch import run_batch
+from runner.consistency import CampaignConsistencyError
 from runner.execution import TrialResult
 from runner.execution import execute_trial as subprocess_execute_trial
 from runner.pipeline import run_recorded_batch
@@ -52,10 +53,15 @@ def main(
 
     if record_evidence:
         root = Path(__file__).resolve().parent.parent
-        recorded = run_recorded_batch(
-            specs, execute_trial, max_trials=args.max_trials,
-            manifest_dir=root / "results" / "manifests",
-        )
+        try:
+            recorded = run_recorded_batch(
+                specs, execute_trial, max_trials=args.max_trials,
+                manifest_dir=root / "results" / "manifests",
+                consistency_root=root if require_verified_trace else None,
+            )
+        except CampaignConsistencyError as exc:
+            print(f"Campaign consistency gate rejected a trial: {exc}")
+            return 1
         result = recorded.batch
     else:
         recorded = None
