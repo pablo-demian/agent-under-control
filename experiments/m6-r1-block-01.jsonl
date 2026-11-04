@@ -1,0 +1,6 @@
+{"schema_version":1,"id":"M6-R1-B1-C1","scenario":"baseline","policy_mode":"baseline","trials":1}
+{"schema_version":1,"id":"M6-R1-B1-C4","scenario":"adv003","policy_mode":"strict","trials":1}
+{"schema_version":1,"id":"M6-R1-B1-C5","scenario":"baseline","policy_mode":"opa","trials":1}
+{"schema_version":1,"id":"M6-R1-B1-C3","scenario":"baseline","policy_mode":"strict","trials":1}
+{"schema_version":1,"id":"M6-R1-B1-C2","scenario":"adv003","policy_mode":"baseline","trials":1}
+{"schema_version":1,"id":"M6-R1-B1-C6","scenario":"adv003","policy_mode":"opa","trials":1}

@@ -1,5 +1,5 @@
 # tests/test_opa_adapter.py
-
+import json
 import shutil
 import subprocess
 from unittest.mock import Mock
@@ -183,3 +183,75 @@ def test_real_opa_decisions(tool, arguments, expected):
     decision = authorize_with_opa(tool, arguments)
 
     assert decision["allowed"] is expected
+
+
+def test_opa_allow_returns_evaluated_context(monkeypatch):
+    runner = Mock(
+        return_value=subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="true\n",
+            stderr="",
+        )
+    )
+    monkeypatch.setattr(subprocess, "run", runner)
+
+    arguments = {
+        "service": "payments-api",
+        "environment": "staging",
+        "level": "INFO",
+    }
+
+    decision = authorize_with_opa(
+        "set_log_verbosity_level",
+        arguments,
+    )
+
+    assert decision["allowed"] is True
+
+    context = decision["evaluated_context"]
+
+    assert context["principal"] == "sre-agent"
+    assert context["resource"] == "payments-api"
+    assert context["environment"] == "staging"
+    assert context["capability"] == "logging.configure"
+    assert context["predicted_effects"] == {
+        "audit_logging_enabled": True,
+    }
+    assert context["arguments"] == arguments
+
+    # Evidence must not alias the caller's mutable arguments.
+    arguments["level"] = "NONE"
+
+    assert context["arguments"]["level"] == "INFO"
+
+    # The serialized input sent to OPA is the same
+    # logical context returned as authorization evidence.
+    submitted_context = json.loads(
+        runner.call_args.kwargs["input"]
+    )
+
+    assert submitted_context == context
+
+def test_opa_denial_does_not_grant_execution_context(monkeypatch):
+    runner = Mock(
+        return_value=subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="false\n",
+            stderr="",
+        )
+    )
+    monkeypatch.setattr(subprocess, "run", runner)
+
+    decision = authorize_with_opa(
+        "set_log_verbosity_level",
+        {
+            "service": "payments-api",
+            "environment": "staging",
+            "level": "NONE",
+        },
+    )
+
+    assert decision["allowed"] is False
+    assert "evaluated_context" not in decision

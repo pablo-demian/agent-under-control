@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -110,8 +111,13 @@ def authorize_with_opa(
 
     allowed = decision == "true"
 
-    return {
+    result = {
         "allowed": allowed,
         "reason": "opa_allow" if allowed else "opa_deny",
         "policy_id": "OPA-AUTHZ-001",
     }
+
+    if allowed:
+        result["evaluated_context"] = deepcopy(context)
+
+    return result

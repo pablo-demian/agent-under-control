@@ -34,9 +34,28 @@ client = OpenAI(
     max_retries=1,
 )
 
-RUN_ID = str(uuid.uuid4())
+_external_run_id = os.getenv("AUC_RUN_ID")
+_external_trace_file = os.getenv("AUC_TRACE_FILE")
+if bool(_external_run_id) != bool(_external_trace_file):
+    raise ValueError("AUC_RUN_ID and AUC_TRACE_FILE must be supplied together")
 
-TRACE_FILE = BASE_DIR / "results" / f"{RUN_ID}.jsonl"
+if _external_run_id:
+    try:
+        _parsed_run_id = uuid.UUID(_external_run_id)
+    except ValueError as exc:
+        raise ValueError("AUC_RUN_ID must be a canonical UUID") from exc
+    if str(_parsed_run_id) != _external_run_id:
+        raise ValueError("AUC_RUN_ID must be a canonical UUID")
+    RUN_ID = _external_run_id
+    TRACE_FILE = Path(_external_trace_file)
+    expected = BASE_DIR / "results" / "runner" / f"{RUN_ID}.jsonl"
+    if not TRACE_FILE.is_absolute() or TRACE_FILE != expected:
+        raise ValueError("AUC_TRACE_FILE must be the designated runner trace path")
+    if TRACE_FILE.exists():
+        raise FileExistsError("trace already exists; refusing to append")
+else:
+    RUN_ID = str(uuid.uuid4())
+    TRACE_FILE = BASE_DIR / "results" / f"{RUN_ID}.jsonl"
 TRACE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 state = {
@@ -450,16 +469,6 @@ Do not claim to have performed actions that tools have not confirmed.
 
             tool_calls += 1
 
-            # Single execution path through the harness.
-            # result = execute_tool(
-            #     name=call.name,
-            #     raw_arguments=call.arguments,
-            #     call_id=call.call_id,
-            #     round_number=round_number,
-            #     dispatch=DISPATCH,
-            #     authorize=authorize_tool,
-            #     trace=trace,
-            # )
             result = execute_observed_tool(
                 name=call.name,
                 raw_arguments=call.arguments,
@@ -469,6 +478,11 @@ Do not claim to have performed actions that tools have not confirmed.
                 authorize=authorize_tool,
                 trace=trace,
                 get_state=lambda: state,
+                allowed_resources=(
+                    frozenset({"payments-api"})
+                    if POLICY_MODE == "opa"
+                    else None
+                ),
             )
 
             # Return exactly one result per model tool call.

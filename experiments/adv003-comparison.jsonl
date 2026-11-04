@@ -1,0 +1,3 @@
+{"schema_version":1,"id":"EXP-ADV003-BASELINE","scenario":"adv003","policy_mode":"baseline","trials":3}
+{"schema_version":1,"id":"EXP-ADV003-STRICT","scenario":"adv003","policy_mode":"strict","trials":3}
+{"schema_version":1,"id":"EXP-ADV003-OPA","scenario":"adv003","policy_mode":"opa","trials":3}

@@ -2,7 +2,10 @@
 
 import json
 from collections.abc import Callable
+from copy import deepcopy
 from typing import Any
+
+from src.execution_boundary import BoundaryViolation
 
 ToolFunction = Callable[..., Any]
 TraceFunction = Callable[..., None]
@@ -18,6 +21,7 @@ def execute_tool(
     dispatch: dict[str, ToolFunction],
     authorize: AuthorizeFunction,
     trace: TraceFunction,
+    on_authorization_decision: Callable[[dict], None] | None = None,
 ) -> dict:
     """
     Process a tool request independently of the LLM.
@@ -62,17 +66,60 @@ def execute_tool(
 
         return result
 
-    # 2. Ask the authorization layer.
-    decision = authorize(name, arguments)
+
+    # 2. Authorize a copy of the parsed request.
+    # The authorizer must not mutate dispatch arguments.
+    decision = authorize(name, deepcopy(arguments))
+
+    if decision["allowed"] and "evaluated_context" in decision:
+        context = decision["evaluated_context"]
+
+        valid_context = (
+            isinstance(context, dict)
+            and isinstance(context.get("arguments"), dict)
+            and context["arguments"] == arguments
+            and isinstance(context.get("resource"), str)
+            and context["resource"] == arguments.get("service")
+            and isinstance(context.get("predicted_effects"), dict)
+        )
+
+        if not valid_context:
+            trace(
+                "policy_decision",
+                {
+                    "tool": name,
+                    "decision": deepcopy(decision),
+                },
+                call_id=call_id,
+            )
+
+            trace(
+                "tool_rejected",
+                {
+                    "tool": name,
+                    "reason": "authorization_context_mismatch",
+                },
+                call_id=call_id,
+            )
+
+            return {
+                "error": "authorization_context_mismatch",
+            }
+
+    # Notify the observer without exposing the mutable
+    # authorization decision used by the harness.
+    if on_authorization_decision is not None:
+        on_authorization_decision(deepcopy(decision))
 
     trace(
         "policy_decision",
         {
             "tool": name,
-            "decision": decision,
+            "decision": deepcopy(decision),
         },
         call_id=call_id,
     )
+
 
     if not decision["allowed"]:
         trace(
@@ -109,7 +156,32 @@ def execute_tool(
     # 4. Execute the tool.
     try:
         result = function(**arguments)
+    except BoundaryViolation as exc:
+        # The execution boundary rejected a protected mutation.
+        # This is different from an authorization-layer denial.
+        trace(
+            "tool_error",
+            {
+                "tool": name,
+                "error_type": type(exc).__name__,
+            },
+            call_id=call_id,
+        )
 
+        trace(
+            "tool_outcome",
+            {
+                "tool": name,
+                "status": "effect_denied",
+                "boundary": "AUDIT-001",
+            },
+            call_id=call_id,
+        )
+
+        return {
+            "error": "execution_boundary_denied",
+            "reason": str(exc),
+        }
     except (TypeError, ValueError, KeyError) as exc:
         trace(
             "tool_error",
@@ -120,18 +192,45 @@ def execute_tool(
             call_id=call_id,
         )
 
+        trace(
+            "tool_outcome",
+            {
+                "tool": name,
+                "status": "raised",
+                "error_type": type(exc).__name__,
+            },
+            call_id=call_id,
+        )        
+
         return {
             "error": "tool_execution_failed",
             "error_type": type(exc).__name__,
         }
 
-    # 5. Record successful function execution.
+    # 5. Preserve the historical event for compatibility.
+    #
+    # "tool_executed" means the function returned normally.
+    # It does not establish that the requested effect occurred.
     trace(
         "tool_executed",
         {
             "tool": name,
             "arguments": arguments,
             "result": result,
+        },
+        call_id=call_id,
+    )
+
+    # 6. Report invocation outcome independently of tool
+    #    result contents.
+    #
+    # A returned {"error": ...} is still a normal return.
+    # Do not infer "effect_denied" from untrusted result data.
+    trace(
+        "tool_outcome",
+        {
+            "tool": name,
+            "status": "returned",
         },
         call_id=call_id,
     )
