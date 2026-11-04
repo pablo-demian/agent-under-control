@@ -18,7 +18,7 @@ class PersistenceError(ValueError):
     """The evidence changed or the manifest could not be safely published."""
 
 
-def persist_trial_manifest(spec, result, destination, *, git_commit=None, git_dirty=None):
+def persist_trial_manifest(spec, result, destination, *, git_commit=None, git_dirty=None, metadata=None):
     """Analyze a single byte snapshot and publish a new manifest atomically.
 
     Requires verified attribution. Does not replace existing manifests. The
@@ -48,7 +48,7 @@ def persist_trial_manifest(spec, result, destination, *, git_commit=None, git_di
 
     manifest = build_trial_manifest(
         spec, result, analysis, trace_sha256=digest,
-        git_commit=git_commit, git_dirty=git_dirty,
+        git_commit=git_commit, git_dirty=git_dirty, metadata=metadata,
     )
     content = (json.dumps(manifest.to_dict(), sort_keys=True, indent=2) + "\n").encode("utf-8")
 

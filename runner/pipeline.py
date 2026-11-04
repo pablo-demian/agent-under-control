@@ -9,6 +9,7 @@ from pathlib import Path
 
 from runner.analysis import TraceAnalysisError
 from runner.batch import BatchResult, run_batch
+from runner.consistency import CampaignGate, Collector, collect_metadata
 from runner.execution import TrialResult
 from runner.manifest import ManifestError
 from runner.persistence import PersistenceError, persist_trial_manifest
@@ -37,6 +38,8 @@ def run_recorded_batch(
     manifest_dir: str | Path,
     max_trials: int = 1,
     persist: Callable[..., object] = persist_trial_manifest,
+    consistency_root: str | Path | None = None,
+    collect: Collector = collect_metadata,
 ) -> RecordedBatch:
     """Run sequentially and attempt publication after *each* trial.
 
@@ -45,8 +48,13 @@ def run_recorded_batch(
     """
     directory = Path(manifest_dir)
     published: list[PublicationResult] = []
+    gate = (
+        CampaignGate.capture(consistency_root, specifications, collect=collect)
+        if consistency_root is not None else None
+    )
 
     def execute_and_record(spec: ExperimentSpec, *, trial_number: int) -> TrialResult:
+        metadata = gate.check(spec) if gate is not None else None
         trial = execute(spec, trial_number=trial_number)
         # Let run_batch reject malformed/mismatched executor results. Never
         # publish evidence associated with a different experiment/trial.
@@ -61,7 +69,10 @@ def run_recorded_batch(
         destination = directory / f"{trial.run_id}.manifest.json"
         try:
             directory.mkdir(parents=True, exist_ok=True)
-            persist(spec, trial, destination)
+            if metadata is None:
+                persist(spec, trial, destination)
+            else:
+                persist(spec, trial, destination, metadata=metadata)
         except (PersistenceError, ManifestError, TraceAnalysisError, OSError, ValueError) as exc:
             # No trace contents, stdout or sensitive exception messages in the result.
             published.append(PublicationResult(spec.id, trial_number, "failed", str(destination), type(exc).__name__))

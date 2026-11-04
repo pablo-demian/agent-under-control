@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 
 from runner.analysis import TraceAnalysis
 from runner.execution import TrialResult
+from runner.metadata import ReproducibilityMetadata
 from runner.spec import ExperimentSpec
 
 MANIFEST_VERSION = 1
@@ -28,10 +29,14 @@ class TrialManifest:
     evidence: dict
     analysis: dict
     limitations: tuple[str, ...]
+    reproducibility: dict | None = None
 
     def to_dict(self) -> dict:
         """Return a serializable snapshot detached from mutable input values."""
-        return asdict(self)
+        value = asdict(self)
+        if self.reproducibility is None:
+            value.pop("reproducibility")
+        return value
 
 
 def build_trial_manifest(
@@ -42,6 +47,7 @@ def build_trial_manifest(
     trace_sha256: str,
     git_commit: str | None = None,
     git_dirty: bool | None = None,
+    metadata: ReproducibilityMetadata | None = None,
 ) -> TrialManifest:
     """Correlate existing observations; never infer a security outcome from exit 0.
 
@@ -78,6 +84,21 @@ def build_trial_manifest(
     if analysis.evidence_status not in {"observed", "incomplete"}:
         raise ManifestError("invalid_evidence_status")
 
+    if metadata is not None:
+        if not isinstance(metadata, ReproducibilityMetadata):
+            raise ManifestError("invalid_reproducibility_metadata")
+        if git_commit is not None and git_commit != metadata.git_commit:
+            raise ManifestError("git_commit_conflict")
+        if git_dirty is not None and git_dirty != metadata.git_dirty:
+            raise ManifestError("git_dirty_conflict")
+        git_commit = metadata.git_commit
+        git_dirty = metadata.git_dirty
+        if not metadata.file_sha256 or any(
+            not isinstance(k, str) or not isinstance(v, str) or _SHA256.fullmatch(v) is None
+            for k, v in metadata.file_sha256.items()
+        ):
+            raise ManifestError("invalid_input_hashes")
+
     limitations = list(analysis.limitations)
     if analysis.evidence_status == "incomplete" and not limitations:
         limitations.append("incomplete_evidence")
@@ -88,8 +109,11 @@ def build_trial_manifest(
     if git_dirty is None:
         limitations.append("git_dirty_unknown")
 
+    if metadata is not None:
+        limitations.extend(metadata.limitations)
+
     return TrialManifest(
-        manifest_version=MANIFEST_VERSION,
+        manifest_version=2 if metadata is not None else MANIFEST_VERSION,
         experiment={
             "schema_version": spec.schema_version,
             "id": spec.id,
@@ -128,4 +152,5 @@ def build_trial_manifest(
             "limitations": list(analysis.limitations),
         },
         limitations=tuple(dict.fromkeys(limitations)),
+        reproducibility=metadata.to_dict() if metadata is not None else None,
     )
